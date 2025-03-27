@@ -97,6 +97,11 @@ bool   point_selected_surf[100000] = {0};
 bool   lidar_pushed, flg_first_scan = true, flg_exit = false, flg_EKF_inited;
 bool   scan_pub_en = false, dense_pub_en = false, scan_body_pub_en = false;
 
+//Gravity optimization
+int lidar_id = 0,countGravity_id = 0;
+V3D globelGrav_output, globelGrav_sum,globelGrav_ave;
+M3D rotAlign;
+
 vector<vector<int>>  pointSearchInd_surf; 
 vector<BoxPointType> cub_needrm;
 vector<PointVector>  Nearest_Points; 
@@ -969,6 +974,7 @@ int main(int argc, char** argv)
             //feats_down_body = feats_undistort->makeShared();
             t1 = omp_get_wtime();
             feats_down_size = feats_down_body->points.size();
+
             /*** initialize the map kdtree ***/
             if(ikdtree.Root_Node == nullptr)
             {
@@ -1033,6 +1039,16 @@ int main(int argc, char** argv)
 
             double t_update_end = omp_get_wtime();
 
+            //gravity_optimization
+            lidar_id++;
+            if(lidar_id == 1 || lidar_id % 50 == 0){
+                countGravity_id ++;
+                globelGrav_output = Eigen::Vector3d{state_point.grav.get_vect()};
+                globelGrav_sum += globelGrav_output;
+                globelGrav_ave = globelGrav_sum / countGravity_id;
+                rotAlign = Eigen::Quaterniond::FromTwoVectors(globelGrav_ave,V3D(0,0,-1)).toRotationMatrix();
+            }
+            
             /******* Publish odometry *******/
             publish_odometry(pubOdomAftMapped);
 
@@ -1096,6 +1112,15 @@ int main(int argc, char** argv)
         string all_points_dir(string(string(ROOT_DIR) + "PCD/") + file_name);
         pcl::PCDWriter pcd_writer;
         cout << "current scan saved to /PCD/" << file_name<<endl;
+
+        //////////////////gravity
+        for(int i = 0; i < pcl_wait_save->size();i++){
+            Eigen::Vector3d Rom(pcl_wait_save->points[i].x,pcl_wait_save->points[i].y,pcl_wait_save->points[i].z);
+            Eigen::Vector3d afterGrvopt = rotAlign * Rom;
+            pcl_wait_save->points[i].x = afterGrvopt[0];
+            pcl_wait_save->points[i].y = afterGrvopt[1];
+            pcl_wait_save->points[i].z = afterGrvopt[2];
+        }
         pcd_writer.writeBinary(all_points_dir, *pcl_wait_save);
     }
 

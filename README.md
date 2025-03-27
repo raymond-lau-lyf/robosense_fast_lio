@@ -27,6 +27,10 @@ int i_sub_cloud, int num_sub_cloud, double & strat_time, double & end_time)`
 #### `preprocess.h`: 
 
 - add M1 point type
+#### 2025.3.18 
+- 添加重力状态优化
+#### 2025.3.20 
+- 集成Vanjee激光雷达
   
 ## Usage
 
