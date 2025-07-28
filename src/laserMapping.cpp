@@ -141,6 +141,11 @@ geometry_msgs::PoseStamped msg_body_pose;
 shared_ptr<Preprocess> p_pre(new Preprocess());
 shared_ptr<ImuProcess> p_imu(new ImuProcess());
 
+void saveTrajectoryTUMformat(std::fstream &fout, std::string &stamp, Eigen::Vector3d &xyz, Eigen::Quaterniond &xyzw)
+{
+    fout << stamp << " " << xyz[0] << " " << xyz[1] << " " << xyz[2] << " " << xyzw.x() << " " << xyzw.y() << " " << xyzw.z() << " " << xyzw.w() << std::endl;
+}
+
 void SigHandle(int sig)
 {
     flg_exit = true;
@@ -292,7 +297,7 @@ void standard_pcl_cbk(const sensor_msgs::PointCloud2::ConstPtr &msg)
     if(p_pre->lidar_type == RSM1_BREAK){
         double start_time, end_time;
         for(int i_sub_cloud = 0; i_sub_cloud < num_sub_cloud; i_sub_cloud ++){
-            PointCloudXYZI::Ptr  ptr(new PointCloudXYZI());
+    PointCloudXYZI::Ptr  ptr(new PointCloudXYZI());
             p_pre->process(msg, ptr, i_sub_cloud, num_sub_cloud, start_time, end_time);
             lidar_buffer.push_back(ptr);
             time_buffer.push_back(start_time);
@@ -305,9 +310,9 @@ void standard_pcl_cbk(const sensor_msgs::PointCloud2::ConstPtr &msg)
         PointCloudXYZI::Ptr  ptr(new PointCloudXYZI());
         double start_time, end_time;
         p_pre->process(msg, ptr, 0, 1, start_time, end_time);
-        lidar_buffer.push_back(ptr);
-        time_buffer.push_back(msg->header.stamp.toSec());
-        last_timestamp_lidar = msg->header.stamp.toSec();
+    lidar_buffer.push_back(ptr);
+    time_buffer.push_back(msg->header.stamp.toSec());
+    last_timestamp_lidar = msg->header.stamp.toSec();
         sig_buffer.notify_all();
     }
     s_plot11[scan_count] = omp_get_wtime() - preprocess_start_time;
@@ -383,6 +388,19 @@ void imu_cbk(const sensor_msgs::Imu::ConstPtr &msg_in)
 
     last_timestamp_imu = timestamp;
 
+
+    static std::fstream fout_traj("/mnt/d/datasets/imu_vectornav.tum", std::ios::out);
+    static std::ostringstream stamp;
+    stamp.str("");
+    if (fout_traj.is_open())
+    {
+        std::string tstamp = std::to_string(timestamp);
+        Eigen::Quaterniond q(msg->orientation.w, msg->orientation.x, msg->orientation.y, msg->orientation.z);
+        saveTrajectoryTUMformat(fout_traj, tstamp, state_point.pos ,q);
+    }
+
+
+
     imu_buffer.push_back(msg);
     mtx_buffer.unlock();
     sig_buffer.notify_all();
@@ -403,7 +421,7 @@ bool sync_packages(MeasureGroup &meas)
         if(p_pre->lidar_type == RSM1){
             meas.lidar_beg_time = time_buffer.front() - meas.lidar->points.back().curvature / double(1000);
         }else{
-            meas.lidar_beg_time = time_buffer.front();
+        meas.lidar_beg_time = time_buffer.front();
         }
         if (meas.lidar->points.size() <= 1) // time too little
         {
@@ -1035,6 +1053,23 @@ int main(int argc, char** argv)
 
             /******* Publish odometry *******/
             publish_odometry(pubOdomAftMapped);
+
+
+            static std::fstream fout_traj("/mnt/d/datasets/fastlio2.tum", std::ios::out);
+            static std::ostringstream stamp;
+            stamp.str("");
+            if (fout_traj.is_open())
+            {
+                // std::string tstamp = to_string(ros::Time().fromSec(laser_odometry->time));
+                std::string tstamp = std::to_string(Measures.lidar_beg_time);
+                Eigen::Quaterniond q_curr = Eigen::Quaterniond(state_point.rot); 
+                q_curr.normalize();                                          
+                saveTrajectoryTUMformat(fout_traj, tstamp, state_point.pos, q_curr);
+            }
+            else
+            {
+                ROS_ERROR("Trajectory file not opened!");
+            }
 
             /*** add the feature points to map kdtree ***/
             t3 = omp_get_wtime();
